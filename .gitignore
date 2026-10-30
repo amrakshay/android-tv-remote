@@ -1,0 +1,29 @@
+# Android / Gradle.
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+# The wrapper jar is checked in on purpose, so a clone can build without Gradle installed first.
+!gradle/wrapper/gradle-wrapper.jar
+
+# A paired client certificate is a credential the TV trusts. Never commit one.
+# The two under protocol/src/test/resources are throwaway fixtures with no private
+# key, used to pin the pairing hash against the reference implementation.
+*.pem
+!protocol/src/test/resources/*.pem
+creds/
+
+# The Dart spike
+.dart_tool/
+spike/pubspec.lock
+spike/pair.log
+
+# Editors and OS
+.DS_Store
+.idea/
+*.iml
+.vscode/

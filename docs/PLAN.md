@@ -1,0 +1,453 @@
+# Android TV Remote — implementation plan
+
+A **native Android app (Kotlin + Jetpack Compose)** that acts as a remote for an Android TV
+on the same Wi-Fi. **Nothing is installed on the TV.**
+
+| | |
+|---|---|
+| Status | Protocol ported to Kotlin, 12 tests green. Live Kotlin↔TV check still pending. |
+| Updated | 2026-10-30 |
+| Stack | Kotlin, Jetpack Compose, coroutines. No Flutter — see §2. |
+| Building for | Android only (handset on **Android 10**, API 29). iPhone deferred — §5.3 |
+| Target TV | Xiaomi MiTV-AXSO0 (`dangal`), Android TV 9 / SDK 28, firmware PI.6036 |
+| Dev TV | Advertises as "Living Room TV", currently 192.168.0.236 (DHCP — discovery is the real answer) |
+| Toolchain | Self-contained in `~/Workarea/local/binaries` — §5.1 |
+| UI design | https://claude.ai/artifact/NL6d7sofp2quFV6vihdBaR (5 screens) |
+| Owner | Akshay |
+
+---
+
+## 1. What is already proven
+
+Everything here was **run**, not reasoned about.
+
+### 1.1 Against the real TV
+
+| Check | Result |
+|---|---|
+| mDNS `_androidtvremote2._tcp` | Advertised as "Living Room TV" |
+| Ports 6466 / 6467 | Open |
+| Pairing from Python (the reference implementation) | Succeeded |
+| Pairing from pure Dart, with a Dart-generated certificate | Succeeded |
+| Reconnect with the stored certificate, no re-pairing | Succeeded |
+| Volume keys | 58 → 57 → 56 → 57 → 58, each step echoed back by the TV |
+| D-pad | Accepted |
+| Device identity pushed by the TV | `Xiaomi / MiTV-AXSO0 / sw 7.00.956317615` |
+| Running app pushed by the TV | `in.startv.hotstar` |
+| App launch by deep link | `https://www.youtube.com` opened YouTube TV |
+| Text input into YouTube's search | **No effect** — YouTube draws its own keyboard; see §4.4 |
+| **Kotlin against the TV** | **Verified 2026-10-30.** Connect with no pairing, `Xiaomi / MiTV-AXSO0 / 7.00.956317615`, volume 58→56→58 with live feedback, D-pad, current app `com.gathin.tvhome`. |
+| Power *off* from Kotlin | Works — the TV left the network 6 s after `KEYCODE_POWER` |
+
+### 1.2 Offline tests — `./gradlew :protocol:test`, 12 passing
+
+- **Framing** survives every ugly split: one message, several in one read, a body split
+  across reads, a split *inside* a multi-byte varint, byte-at-a-time delivery, and a
+  trailing partial message held over to the next read.
+- **Pairing hash** matches `python-androidtvremote2` byte-for-byte on three codes
+  (`00ABCD`, `FF1234`, `0A0000`) over the same two certificates, plus lowercase input and
+  the checksum rejection path.
+- **Certificate** — RSA-2048, exponent 65537, `CN=atvremote`, self-issued,
+  `basicConstraints CA:TRUE pathlen:0`, and a PEM round trip.
+
+The Python implementation is the **oracle**. Any disagreement means this implementation is
+wrong, and it is settled offline rather than against a TV that only ever answers "no".
+
+### 1.3 The app works on the phone
+
+Verified 2026-10-30 on the real handset — **OnePlus 7 (GM1901), Android 10, SDK 29**:
+
+| Step | Result |
+|---|---|
+| Cold start | 1.87 s, no crash |
+| Discovery | Found "Living Room TV", resolved to 192.168.0.236:6466 |
+| Pairing | TV showed `D3B8A5` and named the phone **GM1901** — the `clientName` we send |
+| Code entry | Hex keypad accepted it; paired first try |
+| Reconnect after reinstall | Straight to the remote, no re-pairing |
+| Live state | Header showed `com.google.android.youtube.tv`, volume bar read the TV's 58 |
+| Home | TV switched to `com.gathin.tvhome` |
+| Volume − ×3 | **58 → 55** on both the phone and the TV |
+
+**Two bugs found only by running it**, both invisible to the tests:
+
+1. **Every key press was silently dropped.** `RemoteSession.send()` wrote to the socket on
+   the caller's thread, and on Android that is the main thread, which throws
+   `NetworkOnMainThreadException`. The ViewModel wrapped the call in a bare `runCatching`,
+   so nothing was logged. It looked like a working app — the reader has its own thread, so
+   volume and current-app updates kept arriving while nothing we sent ever left. Writes now
+   go through a `limitedParallelism(1)` IO dispatcher, which also replaces the old
+   `synchronized` block and keeps them ordered; failures are logged rather than swallowed.
+2. **Hold-to-repeat broke plain taps.** Sending `START_LONG` immediately followed by
+   `END_LONG` looks like a press, but the TV ignores the pair when they arrive back to
+   back. A tap now sends `SHORT`, and only a press held past 350 ms switches to the long
+   pair.
+
+A fuller sweep on the device, same day:
+
+| Exercised from the phone | Verified how | Result |
+|---|---|---|
+| D-pad right ×2, down | TV focus moved on the launcher | works |
+| OK | launched `com.amrakshay.movieserve` | works |
+| Back | returned to `com.gathin.tvhome` | works |
+| Home | TV switched to the launcher | works |
+| Volume − / + tap | phone's bar and the TV agreed | works |
+| **Hold to repeat** | 2.5 s hold took volume 55 → 0, and 0 → 33 the other way | works |
+| Mute | `dumpsys audio` on the TV showed `Muted: true` | works |
+| App launch from the Apps sheet | TV focus became `youtube.tv` | works |
+| Type sheet | opens, reports "waiting for a text field" | works |
+| **Backgrounded 20 s, resumed** | volume taps still drove the TV | survives |
+| Media rewind / play-pause / forward | checked by Akshay on the device | works |
+| **Typing into a field on the TV** | checked by Akshay on the device | works |
+
+**A third bug, found here:** tapping an app in the Apps sheet left the sheet open, hiding
+the remote and swallowing the next tap. It now closes on launch.
+
+### Not tested, and why
+
+- **Power, Input** — would switch the TV off or change its source mid-test. `KEYCODE_POWER`
+  is proven from the CLI (§4.4), `Input` is not.
+- **Channel up/down** — nothing is tuned to a channel source on this set.
+- **Search key** from the phone; proven from the CLI only.
+- **Manual IP entry, Switch/re-discovery, the Unreachable screen, multi-TV** — all built,
+  none exercised.
+- **Text actually landing in a field** — blocked by app support, not by this code (§4.4).
+- **Haptics** — cannot be observed over ADB.
+- **The signed release build on the device** — only the debug build has run.
+
+Still rough: window insets are not handled, so the header sits close to the status bar.
+
+### 1.4 The build works
+
+`./gradlew :app:assembleDebug` and `:app:assembleRelease` both succeed. Release is R8'd and
+resource-shrunk at **2.3 MB** (unsigned — the keystore comes with M6). The app currently
+carries a placeholder screen, so this is the floor, not the final size.
+
+### 1.5 Risks closed
+
+| Was a risk | Outcome |
+|---|---|
+| Generating a certificate the TV accepts | **Closed.** Proven from Dart against the TV; BouncyCastle now produces the same shape, including the `CA:TRUE` extension Dart could not emit. |
+| Hash byte-encoding mismatch | **Closed.** Three vectors match the reference in both Dart and Kotlin. `BigInteger.toByteArray()` is *not* usable here — it prepends a sign byte; there is a test pinning this. |
+| Transcribing `.proto` by hand | **Closed.** Schemas recovered exactly from the Python modules' embedded `FileDescriptorProto`, then `protoc --descriptor_set_in --java_out=lite`. No transcription in either language. |
+| Reading the TV's public key off the live TLS session | **Closed, and trivial in Kotlin** — `session.peerCertificates`. This was the fiddliest part of the Dart version. |
+
+---
+
+## 2. Why native Kotlin, not Flutter
+
+Decided 2026-10-30, after the protocol was proven in Dart.
+
+Flutter was the right choice *while iPhone support was in scope*: one protocol
+implementation instead of two. Once Android became the only target, the calculus flipped:
+
+- **Smaller and faster** — no embedded engine. Measured, not estimated: the release APK is
+  **2.3 MB** with R8 and resource shrinking (23 MB for the debug build, which carries the
+  Compose tooling and no shrinking). A Flutter build of the same app would start around
+  17 MB. A remote is open for three seconds at a time, so cold start is the headline
+  number.
+- **Platform reach without a bridge** — hardware volume buttons driving the TV's volume, a
+  quick-settings tile, a lock-screen widget. In Flutter each of these means writing Kotlin
+  anyway, behind a platform channel.
+- **`NsdManager` is first-class** rather than a package.
+- **TLS and crypto are easier**, not harder: `SSLSocket` with a `KeyManager`, and
+  `peerCertificates` hands over the TV's public key directly.
+
+The cost was rewriting the protocol — paid, and it went quickly because the Dart work had
+already found every trap and left behind test vectors to check against. The Dart spike
+stays in `spike/` as a second reference implementation.
+
+---
+
+## 3. Layout
+
+```
+android-tv-remote/
+  protocol/            a plain JVM module, not an Android one
+    src/main/java/     protoc output (generated, committed)
+    src/main/kotlin/
+      Framing.kt       varint length-delimited reader/writer
+      Certs.kt         certificate generation, pairing hash
+      Tls.kt           SSLSocket with the client certificate
+      PairingSession.kt
+      RemoteSession.kt coroutines + StateFlow
+      Cli.kt           desktop harness for driving a real TV
+    src/test/          the 12 tests, no device needed
+  app/                 the Android app: Compose UI, NsdManager, storage
+  spike/               the Dart reference implementation
+  PLAN.md
+```
+
+**`protocol` is deliberately a plain JVM module.** Everything it needs — TLS, crypto,
+protobuf, coroutines — is standard Java, so the whole protocol is unit-testable on the
+desktop, and `./gradlew :protocol:tvcli` drives a real TV with no phone in the loop:
+
+```bash
+./gradlew :protocol:tvcli --args="pair 192.168.0.236 creds"
+./gradlew :protocol:tvcli --args="keys 192.168.0.236 creds VOLUME_DOWN VOLUME_UP"
+```
+
+---
+
+## 4. How the app works, end to end
+
+### 4.1 First run
+
+1. **Generate identity.** RSA-2048 and a self-signed certificate (`CN=atvremote`), off the
+   main thread. Stored on the device and never sent anywhere except the TLS handshake.
+2. **Discover.** `NsdManager` browses `_androidtvremote2._tcp`, resolving each hit to a
+   name, host and port. Manual IP entry sits beside it, because some routers block
+   multicast.
+3. **Pair.** TLS to port 6467; the TV's self-signed certificate is accepted. At
+   `ConfigurationAck` the TV puts a 6-character code on screen. The code's own checksum is
+   verified locally before the SHA-256 secret is sent. `SecretAck` means the TV has
+   recorded this certificate.
+4. **Store.** Certificate, key, TV name and last-known address.
+
+### 4.2 Every run after that
+
+1. **Connect** to port 6466 with the stored certificate — no pairing, no prompt.
+2. **Handshake**, TV-driven: `RemoteConfigure` (carrying its model and vendor) →
+   `RemoteSetActive` → `RemoteStart`, which also reports whether the TV is on.
+3. **Steady state**, both directions at once:
+   - **Out:** one `RemoteKeyInject` per button, with `SHORT` for a tap or
+     `START_LONG`/`END_LONG` to repeat while held.
+   - **In:** `RemoteSetVolumeLevel` on any volume change **including the physical
+     remote's**, `RemoteImeKeyInject` carrying the focused app's package name,
+     `RemoteError`, and `RemotePingRequest` — a keepalive that **must** be answered or the
+     TV hangs up.
+4. **The UI is a view over `StateFlow`s** fed by that stream. The volume bar, power state
+   and the app name in the header are the TV's own reports, not optimistic local guesses.
+
+### 4.3 The awkward edges
+
+| Situation | Behaviour |
+|---|---|
+| App backgrounded | Socket may be torn down. Reconnect on resume rather than fighting it. |
+| TV's DHCP lease changes | Re-resolve by name over mDNS before falling back to the stored IP. |
+| TV powered off | `RemoteStart.started = false`; UI greys out, Power stays live. |
+| Connection drops mid-use | Reconnect with backoff; a thin banner, not a modal. |
+| Mistyped pairing code | Caught by the checksum before the TV is contacted. |
+| Wrong Wi-Fi | Discovery returns nothing; empty state says so and offers manual IP. |
+
+### 4.4 Known gaps in the port
+
+- **Text input is ported, and only works in some apps.** `RemoteImeBatchEdit` carries
+  `imeCounter` and `fieldCounter` that the TV hands out and expects echoed back. They are
+  **per session**: a fresh connection starts at zero and the TV ignores anything sent with
+  those, so the app must wait for the first batch edit before typing. `RemoteSession`
+  exposes `imeReady` for exactly this.
+
+  **Typing works** — confirmed by Akshay on the device.
+
+  It is **app-dependent**, though. Against YouTube TV's search specifically, no batch edit
+  ever arrives, and the TV's own diagnostics explain why: `dumpsys input_method` reports
+  `mServedView=android.view.SurfaceView` with `mInputShown=false` while that search is
+  open. YouTube draws its own keyboard into a SurfaceView rather than using an Android
+  text field, so there is no IME for the protocol to report on — the official Google TV
+  remote cannot type into it either.
+
+  So: it works wherever an app uses a standard `EditText`, and silently does nothing where
+  one does not. The keyboard sheet shows which case it is in (`ready` versus `waiting for
+  a text field`) rather than swallowing the difference.
+- **Powering the TV *on* over the network is impossible on this set.** Measured
+  2026-10-30 with the TV plugged in and in standby: no ping reply, no ARP entry at all,
+  and all five ports closed — 5555, 6466, 6467, 8008, 8009. The firmware drops the Wi-Fi
+  radio completely in standby, so there is nothing listening to talk to. Power *off* over
+  the session still works.
+
+  Escape routes, in order of promise:
+
+  1. ~~**An IR blaster on the phone.**~~ **Ruled out 2026-10-30 — the handset has none.**
+     The physical remote works over infrared, and `ConsumerIrManager` would have let a
+     native app transmit it directly, power-on included. No hardware, no route. (A
+     standalone IR bridge on the network, such as a Broadlink, would reintroduce it, but
+     that is another box to own and power.)
+  2. **Wake-on-LAN — looks unlikely on this hardware.** Inspected over ADB 2026-10-30:
+
+     | Check | Result |
+     |---|---|
+     | Wi-Fi MAC (`wlan0`) | `48:46:c1:…` (recorded locally, redacted here) |
+     | Ethernet MAC (`eth0`) | `c8:28:32:…`, `NO-CARRIER` — **port present, cable not plugged in** |
+     | `/sys/class/net/*/device/power/wakeup` | **absent on both NICs** — the kernel does not register either as wake-capable |
+     | WoL / wake setting in `settings list global` | none (only `wifi_wakeup_enabled`, which is Android's auto-enable-Wi-Fi feature, unrelated) |
+     | `iw` for querying WoWLAN support | not on the device |
+
+     **Tested 2026-10-30 and it does not work.** The TV was powered off through our own
+     protocol, left the network after 6 s, and all three ports were closed 20 s later.
+     Magic packets then went to **both** MACs across `192.168.0.255:9`, `:7`,
+     `255.255.255.255:9` and the direct address. Nothing came back in 90 seconds.
+
+     On Wi-Fi this is settled: **the TV cannot be woken over the network.** The one
+     variant still untested is **Ethernet**, since the port has no cable in it. Wired NICs
+     hold the link in standby far more often than Wi-Fi ones, so if a cable can reach the
+     TV it is worth one more run of the same test — but the missing `power/wakeup` node on
+     `eth0` argues against it too.
+  3. **HDMI-CEC — available but needs another device.** CEC is switched off entirely on
+     this set: `hdmi_control_enabled=0` and `hdmi_control_auto_wakeup_enabled=0`. Turning
+     both on would let a CEC source device wake the TV when it powers up. That does not
+     help the phone app directly unless it can also command that device, so it is a route
+     for the room, not for this codebase.
+  4. **HDMI-CEC** from another device on the TV's inputs.
+
+  **Settled for v1: the app cannot turn this TV on.** Power *off* works and stays. When
+  the TV is unreachable the app says so plainly — "TV is asleep, use the physical remote" —
+  rather than offering a Power button that silently does nothing. Revisit only if the TV
+  is ever moved to Ethernet.
+- **Certificate storage** will start as app-private internal storage. Hardening it with the
+  Android Keystore (a non-exportable key, self-signed through a keystore-backed signer) is
+  a follow-up, not a v1 blocker, for a credential that only grants control of a TV on the
+  local network.
+
+---
+
+## 5. Toolchain and installing on the phone
+
+### 5.1 Where the toolchain lives
+
+Self-contained under `~/Workarea/local/binaries`; deleting that folder removes all of it.
+No Android Studio.
+
+```
+~/Workarea/local/binaries/
+  android-sdk/      cmdline-tools/latest, platform-tools (adb),
+                    platforms/android-36 + android-37.2, build-tools/36.0.0 + 37.0.0
+  gradle -> gradle-9.8.2/
+  downloads/        the zips, safe to delete
+  flutter/          NO LONGER NEEDED — 4.2 GB, removable now that the stack is Kotlin
+```
+
+The JDK is already present: **Temurin 21** via SDKMAN at
+`~/.sdkman/candidates/java/21.0.10-tem`, with `JAVA_HOME` set.
+
+```bash
+export ANDROID_SDK_ROOT="$HOME/Workarea/local/binaries/android-sdk"
+export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+```
+
+Versions pinned in `gradle/libs.versions.toml`: AGP 9.5.0, Kotlin 2.4.21, Compose BOM
+2026.09.00, protobuf 4.36.2 (must match the protoc that generated `protocol/src/main/java`),
+BouncyCastle 1.86.
+
+Two things that cost time and are easy to hit again:
+
+> **AGP 9 has built-in Kotlin support.** Applying `org.jetbrains.kotlin.android` alongside
+> it is a hard error. Only the Compose compiler plugin is applied with it.
+
+> **Android platforms now carry a minor version.** The whole current AndroidX generation
+> (core 1.19, lifecycle 2.11, Compose 1.12) requires compiling against 37. The SDK package
+> is `platforms;android-37.2` — `platforms;android-37` does not exist and `sdkmanager`
+> just says "not found" — and the build declares `compileSdk = 37` plus
+> `compileSdkMinor = 2`.
+
+### 5.2 Installing on the phone
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+Install over USB (`adb install -r …`) or copy the APK across and allow "install unknown
+apps" for your file manager once. Signed with a local keystore generated once: **it does
+not expire**, and there is no Play Store involvement.
+
+**Target handset: Android 10 (API 29)**, `minSdk` 26, `targetSdk` 36.
+
+- **mDNS needs no permission on API 29.** `NEARBY_WIFI_DEVICES` is Android 13+ and is
+  declared with `neverForLocation` purely for forward compatibility — asking for location
+  to find a TV is a bad look, and users decline it.
+- `CHANGE_WIFI_MULTICAST_STATE` matters: some devices drop multicast unless a lock is held
+  while browsing.
+
+### 5.3 iPhone — deferred, tracked as a GitHub issue
+
+Now a genuine rewrite rather than a build step, since the protocol is Kotlin. The issue
+should carry:
+
+- The protocol is ~600 lines of Kotlin with the traps documented and a Python oracle to
+  check against; Swift would take the same path (Security.framework or BoringSSL for the
+  certificate, `URLSession`/`Network.framework` for TLS, SwiftProtobuf).
+- Xcode required (~15 GB); `NSLocalNetworkUsageDescription` + `NSBonjourServices` in
+  `Info.plist` or mDNS silently returns nothing on iOS 14+.
+- **The signing decision**: a free Apple ID means the app stops working every **7 days** and
+  must be re-signed from a Mac; the Apple Developer Program (~₹9,000/year) gives a year plus
+  TestFlight. AltStore/Sideloadly only automate the weekly re-sign — it is still 7 days.
+
+---
+
+## 6. The UI
+
+Five screens, designed and viewable here:
+**https://claude.ai/artifact/NL6d7sofp2quFV6vihdBaR**
+
+Dark by default — used in a dark room, at arm's length, often without looking. Indigo
+`#7C8CFF` on near-black `#0B0B0F`; every touch target ≥48 dp.
+
+| Screen | For |
+|---|---|
+| **1 · Find your TV** | mDNS results with model and address, a "still looking" row, and "Enter IP address" as a fallback. First run only. |
+| **2 · Pair** | Six slots and a **hex keypad** — the alphabet is 0-9 and A-F, so a numeric keypad would be a bug. |
+| **3 · Remote** | The daily screen. TV name and what is playing, Power / Input / Mute, a large D-pad with a big OK, Back / Home / Search, a volume rocker showing the **live** level, a channel rocker, media transport. |
+| **4 · Type on TV** | A sheet over the remote; the phone's keyboard mirroring the TV's focused field. |
+| **5 · Apps** | Tiles that deep-link straight into an app, plus a "running now" row. |
+
+Decisions worth keeping: the volume bar shows **the TV's** number, so it moves when someone
+uses the physical remote; the header carries the running app, which is free from the
+protocol and proves the connection is alive; no fake status bars, no gradients, no emoji.
+
+---
+
+## 7. Milestones
+
+| | Milestone | Exit criterion |
+|---|---|---|
+| ~~M0~~ | ~~De-risk the protocol~~ | **Done** — TV driven from Dart |
+| ~~M1~~ | ~~Port to Kotlin: framing, certs, hash, sessions, tests~~ | **Done** — 12 tests green |
+| M1b | Drive the real TV from Kotlin via `:protocol:tvcli` | Volume moves. **Blocked only on the TV being awake.** |
+| M2 | Discovery (`NsdManager`) + storage + pairing flow in the app | Fresh install pairs and survives a restart without re-pairing |
+| M3 | Remote screen, haptics, hold-to-repeat, **text input** | Replaces the physical remote for a full evening |
+| M4 | Live state: volume bar, power, current app in the header | The physical remote's volume change shows on the phone within a second |
+| M5 | App shortcuts; multi-TV; reconnect on resume and network change | Works from cold without explanation |
+| M6 | Release keystore, signed APK | Installed on the Android 10 phone and used for a week |
+| M7 | Hardware volume buttons, quick-settings tile | The things that justified going native |
+| — | iPhone | Deferred. GitHub issue per §5.3. |
+
+---
+
+## 8. Risks that remain
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Kotlin session code is wrong in some way the tests do not cover | Medium | Medium | M1b against the real TV — the protocol is sequential and the oracle is there |
+| mDNS flaky on the phone's Wi-Fi | Medium | Medium | Multicast lock while browsing; manual IP always available |
+| `NsdManager` quirks (known for stale resolves) | Medium | Low | Fall back to jmDNS if it misbehaves |
+| RSA keygen slow on the handset | Low | Low | Once per install, off the main thread, with a progress indicator |
+| Android kills the socket in the background | Medium | Low | Expected; reconnect on resume |
+| Firmware update changes the protocol | Low | Medium | Stable for years; nothing pinned to firmware |
+
+---
+
+## 9. Out of scope for v1
+
+Voice/mic streaming; Cast; universal control of an AVR or soundbar; Wear OS; Wake-on-LAN
+power-on (research first, §4.4); any cloud component — this app should never need the
+internet.
+
+---
+
+## 10. Open decisions
+
+1. **App shortcuts** — hand-curated list, or read the installed apps over ADB (port 5555 is
+   open on this TV) and cache them? ADB is richer but drags a second protocol in.
+2. **Scope** — strictly a remote, or does it grow into the debloat/theming tooling that
+   already lives in `cleanyourtv`? Keep them separate until there is a reason not to.
+3. **iPhone** — deferred wholesale to the GitHub issue (§5.3). Nothing in the Android work
+   depends on it.
+
+---
+
+## 11. Housekeeping
+
+- The TV lists **"Claude Spike"** and **"Flutter Remote Spike"** as paired devices. Remove
+  them under Settings → Remote & accessories when they stop being useful.
+- `spike/creds/` holds a **real private key** that the TV trusts. It is gitignored; keep it
+  that way.
+- `~/Workarea/local/binaries/flutter` (4.2 GB) and `downloads/` (2.3 GB) can be deleted.

@@ -1,0 +1,14 @@
+name: atv_spike
+description: Risk-reduction spike for the Android TV remote protocol in pure Dart.
+publish_to: none
+environment:
+  sdk: ^3.0.0
+dependencies:
+  protobuf: ^6.1.0
+  pointycastle: ^3.9.1
+  basic_utils: ^5.7.0
+  asn1lib: ^1.5.2
+  multicast_dns: ^0.3.2
+  crypto: ^3.0.3
+dev_dependencies:
+  test: ^1.33.0
