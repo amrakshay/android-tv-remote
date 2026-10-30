@@ -35,8 +35,24 @@ android {
         versionName = rawVersion
     }
 
+    // The release key comes from the environment, never from the repository.
+    // Without it the release build is simply unsigned, which is what a clone
+    // should get; CI checks for the secret and fails rather than publishing one.
+    signingConfigs {
+        val keystorePath = System.getenv("ATVREMOTE_KEYSTORE")
+        if (!keystorePath.isNullOrBlank() && file(keystorePath).exists()) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ATVREMOTE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ATVREMOTE_KEY_ALIAS") ?: "atvremote"
+                keyPassword = System.getenv("ATVREMOTE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

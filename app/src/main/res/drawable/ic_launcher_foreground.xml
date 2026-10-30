@@ -1,0 +1,45 @@
+<!--
+  The app's own D-pad, which is the thing you actually look at: four segments
+  around a centre button. Drawn as four stroked arcs with round caps rather than
+  a ring with notches cut out, so the gaps stay clean at 48dp where a cut-out
+  would close up.
+
+  108dp viewport with the content inside the middle 66dp, as adaptive icons
+  require — anything outside that can be masked away by the launcher.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Up -->
+    <path
+        android:pathData="M37.94,31.06 A28,28 0 0 1 70.06,31.06"
+        android:strokeWidth="8.5"
+        android:strokeColor="#7C8CFF"
+        android:strokeLineCap="round" />
+    <!-- Right -->
+    <path
+        android:pathData="M76.94,37.94 A28,28 0 0 1 76.94,70.06"
+        android:strokeWidth="8.5"
+        android:strokeColor="#7C8CFF"
+        android:strokeLineCap="round" />
+    <!-- Down -->
+    <path
+        android:pathData="M70.06,76.94 A28,28 0 0 1 37.94,76.94"
+        android:strokeWidth="8.5"
+        android:strokeColor="#7C8CFF"
+        android:strokeLineCap="round" />
+    <!-- Left -->
+    <path
+        android:pathData="M31.06,70.06 A28,28 0 0 1 31.06,37.94"
+        android:strokeWidth="8.5"
+        android:strokeColor="#7C8CFF"
+        android:strokeLineCap="round" />
+
+    <!-- OK -->
+    <path
+        android:pathData="M41,54 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0 Z"
+        android:fillColor="#F2F2F5" />
+</vector>

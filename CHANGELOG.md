@@ -9,7 +9,13 @@ configure time — so the APK and the repository cannot ship disagreeing numbers
 
 ## [Unreleased]
 
-Nothing tagged yet. Everything below works on a real TV and a real phone.
+Nothing yet.
+
+## [1.0.0] — 2026-10-30
+
+First release. A phone remote for an Android TV that installs nothing on the TV: pair once with
+a code shown on screen, and it works from then on. Verified end to end against a Xiaomi
+MiTV-AXSO0 from a OnePlus 7.
 
 ### Added
 

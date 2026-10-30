@@ -1,8 +1,9 @@
 <p align="center">
-  <strong>android-tv-remote</strong>
+  <img src="docs/logo.svg" alt="android-tv-remote" width="112">
 </p>
 
 <p align="center">
+  <strong>android-tv-remote</strong><br>
   Your phone as the remote for an Android TV. Nothing installed on the TV.
 </p>
 
