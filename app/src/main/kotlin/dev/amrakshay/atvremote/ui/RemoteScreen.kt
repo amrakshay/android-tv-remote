@@ -111,19 +111,23 @@ fun RemoteScreen(
             modifier = Modifier.fillMaxWidth().height(46.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Back in the middle, under the thumb — it is the most-pressed of
+            // the three and the hardest to hit blind at either edge.
+            PillButton("Search", Icons.Default.Search, small = true) {
+                press(RemoteKeyCode.KEYCODE_SEARCH)
+            }
             PillButton("Back", Icons.Default.ArrowBack, small = true) {
                 press(RemoteKeyCode.KEYCODE_BACK)
             }
             PillButton("Home", Icons.Default.Home, small = true) {
                 press(RemoteKeyCode.KEYCODE_HOME)
             }
-            PillButton("Search", Icons.Default.Search, small = true) {
-                press(RemoteKeyCode.KEYCODE_SEARCH)
-            }
         }
 
+        // Tall on purpose: the space freed by the smaller D-pad comes here, so
+        // + and − are the easiest things to hit without looking at the screen.
         Row(
-            modifier = Modifier.fillMaxWidth().height(128.dp),
+            modifier = Modifier.fillMaxWidth().height(180.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             VolumeRocker(volume, Modifier.weight(1f), press, hold, onRelease)
@@ -243,9 +247,13 @@ private fun ColumnScope.DPad(
     onHold: (RemoteKeyCode) -> Unit,
     onRelease: (RemoteKeyCode) -> Unit,
 ) {
+    // The outer box takes the slack so the pad stays centred on a tall screen;
+    // the ring itself is capped at the mock's proportion (236 of a 350 content
+    // width) rather than filling, which made it dominate everything else.
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
+                .fillMaxWidth(0.68f)
                 .aspectRatio(1f)
                 .clip(CircleShape)
                 .background(AtvColors.Pad),
@@ -269,7 +277,7 @@ private fun ColumnScope.DPad(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .fillMaxSize(0.38f)
+                    .fillMaxSize(0.39f)
                     .clip(CircleShape)
                     .background(AtvColors.Accent)
                     .clickable { onPress(RemoteKeyCode.KEYCODE_DPAD_CENTER) },
@@ -277,7 +285,7 @@ private fun ColumnScope.DPad(
             ) {
                 Text(
                     "OK",
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = AtvColors.OnAccent,
                 )
@@ -298,12 +306,12 @@ private fun BoxScope.Arrow(
     Box(
         modifier = Modifier
             .align(alignment)
-            .fillMaxSize(0.31f)
+            .fillMaxSize(0.34f)
             .clip(CircleShape)
             .repeatable(onTap, onHoldStart, onHoldEnd),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, tint = AtvColors.TextDim, modifier = Modifier.size(30.dp))
+        Icon(icon, label, tint = AtvColors.TextDim, modifier = Modifier.size(26.dp))
     }
 }
 

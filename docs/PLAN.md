@@ -385,7 +385,7 @@ Dark by default — used in a dark room, at arm's length, often without looking.
 |---|---|
 | **1 · Find your TV** | mDNS results with model and address, a "still looking" row, and "Enter IP address" as a fallback. First run only. |
 | **2 · Pair** | Six slots and a **hex keypad** — the alphabet is 0-9 and A-F, so a numeric keypad would be a bug. |
-| **3 · Remote** | The daily screen. TV name and what is playing, Power / Input / Mute, a large D-pad with a big OK, Back / Home / Search, a volume rocker showing the **live** level, a channel rocker, media transport. |
+| **3 · Remote** | The daily screen. TV name and what is playing, Power / Input / Mute, a D-pad with a big OK, then **Search · Back · Home** with Back in the middle under the thumb, a tall volume rocker showing the **live** level, a channel rocker, media transport. |
 | **4 · Type on TV** | A sheet over the remote; the phone's keyboard mirroring the TV's focused field. |
 | **5 · Apps** | Tiles that deep-link straight into an app, plus a "running now" row. |
 
