@@ -108,3 +108,33 @@ change something in that list, please update it.
 
 The version lives in [`VERSION`](VERSION) and the Android build reads it, deriving `versionCode`
 from it (`1.2.3` becomes `10203`). A release is one edit, not two that can disagree.
+
+## Releasing
+
+Push a `v*` tag and the release workflow does the rest: it checks the tag against `VERSION`,
+builds, signs, verifies the signature with `apksigner`, pulls the notes out of `CHANGELOG.md`
+and publishes the APK. CI signs from repository secrets.
+
+To sign locally:
+
+```bash
+source tools/release-env.sh && ./gradlew :app:assembleRelease
+```
+
+**There is no keystore and no password anywhere in this repository, and there must not be.** It
+is public, and a signing key committed here would let anyone build an APK that Android accepts
+as an upgrade to this one — a key that has been published cannot be withdrawn. The password and
+the keystore live in the macOS login Keychain, under the account `atvremote`:
+
+| Service | Holds |
+|---|---|
+| `android-tv-remote-keystore-password` | the store and key password |
+| `android-tv-remote-keystore-base64` | the keystore itself |
+
+`tools/release-env.sh` reads both and rebuilds `~/.android-tv-remote/release.keystore` when it
+is missing, so the file on disk is a cache and the Keychain is the source. With iCloud Keychain
+on, that is also the off-machine backup.
+
+**If both the Keychain entries and the GitHub secrets are lost, the key is gone**, and no future
+release can upgrade an installed copy in place — people would have to uninstall, losing their
+pairing.
