@@ -515,7 +515,30 @@ everything written to it, so a naive `cmd; echo MARKER` reads back the *echo* of
 returns before the command has run. `stty -echo` did not take on this device and `exec:sh` still
 produced a prompt. One-shot streams have none of this.
 
-### 12.3 What was verified, end to end, from Kotlin
+### 12.3 From the phone — the real path
+
+Verified 2026-10-30 on the OnePlus 7 (Android 10), release build, installed in place over 1.0.0:
+
+| Check | Result |
+|---|---|
+| Discovery lists a device that advertises both ways | **Once**, as the TV — the Xiaomi answers to `_androidtvremote2._tcp` and `_adb._tcp` and appears as one row |
+| The phone's own `_adb._tcp` advertisement | Ignored (`ignoring ourselves at …` in the log) |
+| Typed address, transport chosen by probe | `192.168.0.138` → 6466 closed, 5555 open → ADB, with no further input |
+| Header | `t950s_be311`, model read off the ADB banner |
+| Volume from the phone | 57 → 54, matching the projector's own `streamVolume` |
+| D-pad from the phone | Focus moved three rows down the projector's launcher |
+| Apps sheet | The real list, "Read off the device, so every one of these is really installed" |
+| App launch | YouTube opened; the header followed within a second |
+| Keyboard sheet on ADB | Backspace in place of Clear, and the ADB wording |
+| **Typing into YouTube's search** | **"the bear", with results** |
+| Saved and relabelled | Reopens as `t950s_be311 · 192.168.0.138 · over ADB` under *Already paired* |
+
+The native path was re-checked on the same build, since both transports now sit behind one
+interface: paired with the TV from the phone (code `EF21BE`, which the TV offered to "GM1901"),
+connected, `in.startv.hotstar` shown as the running app, and volume 59 → 56 → 59 pushed back live
+by the TV.
+
+### 12.4 What was verified, end to end, from Kotlin
 
 Driven with `tvcli` against the projector:
 
@@ -534,7 +557,7 @@ Driven with `tvcli` against the projector:
 The last row is worth keeping. On the remote protocol YouTube reports no text field, because it
 draws its own keyboard into a `SurfaceView`; ADB injects real key events, so it lands.
 
-### 12.4 Known gaps on this transport
+### 12.5 Known gaps on this transport
 
 - **No push.** Volume and the foreground app are polled every two seconds, and re-read 300 ms
   after a volume key so the bar does not lag what you just heard. Someone using the physical
@@ -547,6 +570,15 @@ draws its own keyboard into a `SurfaceView`; ADB injects real key events, so it 
 - **Android 11+ wireless debugging** (`_adb-tls-connect._tcp`, SPAKE2 pairing, TLS) is not
   implemented. The projector does not use it. A device that needs it currently fails at the
   handshake rather than saying so.
-- **`AUTH` is implemented but was not exercised against a device**, because the projector never
-  asks for it. It is pinned instead to `adb keygen`'s own output (§1.2), which covers the part
-  that fails silently.
+- **`AUTH` reaches a real device but was not carried through to a grant.** Run against the
+  Xiaomi, which does require it, the client offered its public key and the TV raised
+  `com.android.systemui/.usb.UsbDebuggingActivity` — its "Allow debugging?" dialog — and the CLI
+  printed the prompt to accept it. The dialog was dismissed rather than accepted, since granting
+  a key persistent control of someone's TV is theirs to do. So the post-acceptance leg is still
+  covered only by the `adb keygen` vector (§1.2).
+- **A dismissed authorisation is slow to report.** adbd says nothing when the user cancels, so the
+  client sits on its 120 s timeout. The Authorising screen explains what to look for and offers
+  another device, so it is not a dead end, but it is not an error either.
+- **mDNS advertisement is not dependable on these devices.** The projector advertised `_adb._tcp`
+  at first and had stopped by the time the phone looked, with adbd still running and 5555 still
+  open. The typed-address path covers it, and it is why the probe exists.
