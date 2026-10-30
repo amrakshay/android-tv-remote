@@ -40,7 +40,12 @@ data class DiscoveredTv(
      * been connected to and can say what it is.
      */
     val label: String
-        get() = if (kind == TransportKind.Adb) "Android device" else serviceName
+        get() = if (kind == TransportKind.Adb) ADB_PLACEHOLDER else serviceName
+
+    companion object {
+        /** Stands in until the device has been connected to and can say its model. */
+        const val ADB_PLACEHOLDER = "Android device"
+    }
 }
 
 /**

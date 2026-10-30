@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licence"></a>
   <a href="../../actions/workflows/ci.yml"><img src="../../actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/app-Android%208%2B-blue" alt="Android 8+">
-  <img src="https://img.shields.io/badge/apk-2.3%20MB-blue" alt="2.3 MB">
+  <img src="https://img.shields.io/badge/apk-2.8%20MB-blue" alt="2.8 MB">
 </p>
 
 ---
@@ -131,6 +131,7 @@ Verified against a Xiaomi MiTV-AXSO0 from a OnePlus 7 — see
 [docs/PLAN.md](docs/PLAN.md) for how each was checked.
 
 - Discovery over mDNS, and a typed address for networks that block it
+- Renaming a device, so a box called `t950s_be311` can be called what it is
 - Pair once; the certificate is kept and reused
 - D-pad and OK, Back, Home, Search
 - Volume and mute, with the TV's own level shown live

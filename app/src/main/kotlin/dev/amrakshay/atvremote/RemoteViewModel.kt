@@ -205,9 +205,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             }.onSuccess { remote ->
                 // Only now do we know what an ADB device is called, so the saved
                 // entry is relabelled from "Android device" to its model. A native
-                // TV keeps the name it advertised, which is one a person chose.
+                // TV keeps the name it advertised, which is one a person chose —
+                // and so does any device the user has renamed, which is why this
+                // only fills a label in, never replaces one.
                 val model = remote.device.value?.model.orEmpty()
-                val named = if (tv.kind == TransportKind.Adb && model.isNotBlank()) {
+                val unnamed = tv.label.isBlank() || tv.label == DiscoveredTv.ADB_PLACEHOLDER
+                val named = if (tv.kind == TransportKind.Adb && unnamed && model.isNotBlank()) {
                     tv.copy(label = model)
                 } else {
                     tv
@@ -231,6 +234,19 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * The name is this phone's alone — nothing is sent to the device. A box
+     * called `t950s_be311` says nothing about which room it is in.
+     */
+    fun rename(name: String) {
+        val current = (_state.value as? UiState.Connected)?.tv ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val renamed = current.copy(label = trimmed)
+        _state.value = UiState.Connected(renamed)
+        viewModelScope.launch { store.remember(renamed) }
     }
 
     fun retry() {

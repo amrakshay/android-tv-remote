@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Home
@@ -39,9 +41,17 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,11 +61,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.withTimeoutOrNull
 import dev.amrakshay.atvremote.protocol.DeviceInfo
 import dev.amrakshay.atvremote.protocol.VolumeInfo
+import kotlinx.coroutines.withTimeoutOrNull
 import remote.Remotemessage.RemoteKeyCode
 
 @Composable
@@ -70,8 +81,10 @@ fun RemoteScreen(
     onType: () -> Unit,
     onApps: () -> Unit,
     onSwitchTv: () -> Unit,
+    onRename: (String) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
+    var renaming by remember { mutableStateOf(false) }
     val press: (RemoteKeyCode) -> Unit = { code ->
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         onKey(code)
@@ -89,7 +102,7 @@ fun RemoteScreen(
             .padding(top = 18.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Header(tvName, device, currentApp, onSwitchTv)
+        Header(tvName, device, currentApp, onSwitchTv, onRename = { renaming = true })
 
         Row(
             modifier = Modifier.fillMaxWidth().height(60.dp),
@@ -165,6 +178,17 @@ fun RemoteScreen(
             BottomAction("TVs", Icons.Default.Tv, onSwitchTv)
         }
     }
+
+    if (renaming) {
+        RenameDialog(
+            current = tvName,
+            onDismiss = { renaming = false },
+            onRename = {
+                renaming = false
+                onRename(it)
+            },
+        )
+    }
 }
 
 private const val HOLD_THRESHOLD_MS = 350L
@@ -197,12 +221,77 @@ private fun Modifier.repeatable(
     )
 }
 
+/**
+ * A device named by its model — `t950s_be311` and the like — says nothing about
+ * which room it is in. The name is only ever shown by this app, so renaming it
+ * costs nothing and the device never hears about it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenameDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onRename: (String) -> Unit,
+) {
+    var draft by remember { mutableStateOf(current) }
+    val commit = { if (draft.isNotBlank()) onRename(draft.trim()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AtvColors.Pad,
+        title = { Text("Rename", color = AtvColors.Text, fontSize = 18.sp) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(32) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { commit() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = AtvColors.Text,
+                        unfocusedTextColor = AtvColors.Text,
+                        focusedBorderColor = AtvColors.Accent,
+                        unfocusedBorderColor = AtvColors.Track,
+                        cursorColor = AtvColors.Accent,
+                    ),
+                )
+                Spacer(Modifier.size(10.dp))
+                Text(
+                    "Only this phone sees the name. Nothing is changed on the device.",
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                    color = AtvColors.Faint,
+                )
+            }
+        },
+        confirmButton = {
+            Text(
+                "Save",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (draft.isBlank()) AtvColors.Muted else AtvColors.Accent,
+                modifier = Modifier.clickable(enabled = draft.isNotBlank()) { commit() }.padding(8.dp),
+            )
+        },
+        dismissButton = {
+            Text(
+                "Cancel",
+                fontSize = 14.sp,
+                color = AtvColors.Muted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
+            )
+        },
+    )
+}
+
 @Composable
 private fun Header(
     tvName: String,
     device: DeviceInfo?,
     currentApp: String,
     onSwitchTv: () -> Unit,
+    onRename: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -219,7 +308,13 @@ private fun Header(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(tvName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AtvColors.Text)
+            Text(
+                tvName,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AtvColors.Text,
+                modifier = Modifier.clickable(onClick = onRename),
+            )
             Spacer(Modifier.size(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(AtvColors.Online))

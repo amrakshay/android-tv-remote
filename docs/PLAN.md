@@ -532,6 +532,7 @@ Verified 2026-10-30 on the OnePlus 7 (Android 10), release build, installed in p
 | Keyboard sheet on ADB | Backspace in place of Clear, and the ADB wording |
 | **Typing into YouTube's search** | **"the bear", with results** |
 | Saved and relabelled | Reopens as `t950s_be311 · 192.168.0.138 · over ADB` under *Already paired* |
+| Renamed to "Projector" | Survived a force-stop and relaunch, and a reconnect did not put the model back |
 
 The native path was re-checked on the same build, since both transports now sit behind one
 interface: paired with the TV from the phone (code `EF21BE`, which the TV offered to "GM1901"),

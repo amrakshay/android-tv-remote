@@ -106,6 +106,7 @@ private fun App(viewModel: RemoteViewModel = viewModel()) {
                 onType = { sheet = Sheet.Keyboard },
                 onApps = { sheet = Sheet.Apps },
                 onSwitchTv = viewModel::startDiscovery,
+                onRename = viewModel::rename,
             )
             when (sheet) {
                 Sheet.Keyboard -> KeyboardSheet(

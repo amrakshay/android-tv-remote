@@ -9,6 +9,10 @@ configure time — so the APK and the repository cannot ship disagreeing numbers
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.1.0] — 2026-10-30
+
 ### Added
 
 - **Devices with no TV Remote Service are now supported, over ADB** ([#1](https://github.com/amrakshay/android-tv-remote/issues/1)).
@@ -36,6 +40,9 @@ configure time — so the APK and the repository cannot ship disagreeing numbers
   a device can actually do instead of offering a control that quietly does nothing.
 - `tvcli` gained `adb-info`, `adb-keys`, `adb-text` and `adb-launch`, so the second transport is
   as drivable from a desktop as the first.
+- **Devices can be renamed.** Tap the name in the remote's header. A box called `t950s_be311`
+  says nothing about which room it is in, and the name only ever lives on the phone — nothing is
+  sent to the device, and a name you have chosen is never overwritten by the model it reports.
 
 ### Verified on hardware
 

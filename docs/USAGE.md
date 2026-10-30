@@ -75,6 +75,12 @@ remembers it, so every later launch goes straight to the remote.
 The TV names the phone on its pairing screen — the app sends the handset model, so you can tell
 which phone is asking.
 
+## 3b. Renaming a device
+
+Tap the name at the top of the remote. A device that reports itself as `t950s_be311` can be
+called "Projector"; the name lives on this phone only, nothing is sent to the device, and a name
+you have chosen is never replaced by the model it reports.
+
 ## 4. Using it
 
 | | |
