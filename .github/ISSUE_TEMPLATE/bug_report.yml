@@ -1,0 +1,88 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the app cannot find your TV, please fill in the discovery
+        section — most such reports turn out to be a sleeping TV or a router blocking multicast
+        rather than a bug, and that section is how we tell the difference quickly.
+
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where does it go wrong?
+      options:
+        - Finding the TV
+        - Pairing
+        - Using the remote
+        - Typing on the TV
+        - App shortcuts
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone model and Android version
+      placeholder: "OnePlus 7 (GM1901), Android 10"
+    validations:
+      required: true
+
+  - type: input
+    id: tv
+    attributes:
+      label: TV model and Android version
+      placeholder: "Xiaomi MiTV-AXSO0, Android TV 9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: App log
+      description: |
+        With the phone connected over ADB:
+        ```
+        adb logcat -d | grep -iE "atvremote|TvDiscovery"
+        ```
+      render: shell
+
+  - type: textarea
+    id: discovery
+    attributes:
+      label: Discovery (only if the TV is not found)
+      description: |
+        With the TV **switched on**, from a computer on the same network:
+        ```
+        dns-sd -B _androidtvremote2._tcp          # macOS
+        avahi-browse -rt _androidtvremote2._tcp   # Linux
+        ```
+        And whether the TV answers at all:
+        ```
+        ping <tv-ip>
+        nc -z -w 2 <tv-ip> 6466 && echo open
+        ```
+        If these find nothing while the TV is awake, the problem is the network rather than
+        the app.
+      render: shell
+
+  - type: checkboxes
+    id: awake
+    attributes:
+      label: Before reporting
+      options:
+        - label: The TV was switched on, not in standby
+          required: true
+        - label: The phone and the TV are on the same network
+          required: true

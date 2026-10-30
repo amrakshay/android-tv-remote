@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read the scope section of [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) first.
+        Managing the TV, anything needing the internet, and playing media in the app itself are
+        deliberately out of scope — this is a remote, and it stays small on purpose.
+
+        Switching the TV **on** is not a missing feature: the TV leaves the network entirely in
+        standby and does not wake on LAN. See `docs/PLAN.md` §4.4 for the measurements.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you hit, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: I have read the scope section and believe this fits
+          required: true

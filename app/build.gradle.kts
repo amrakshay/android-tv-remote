@@ -6,6 +6,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// The version comes from the repository's VERSION file, so a release is one edit
+// rather than two that can disagree. versionCode has to be a monotonically
+// increasing integer, so it is derived rather than tracked separately: 1.2.3
+// becomes 10203. That holds as long as minor and patch stay under 100.
+val versionFile = rootProject.file("VERSION")
+val rawVersion = versionFile.takeIf { it.exists() }?.readText()?.trim()
+    ?: throw GradleException("VERSION not found at ${versionFile.absolutePath}")
+val versionParts = Regex("""^(\d+)\.(\d+)\.(\d+)$""").matchEntire(rawVersion)
+    ?: throw GradleException("VERSION must look like 1.2.3, got '$rawVersion'")
+val (major, minor, patch) = versionParts.destructured
+
 android {
     namespace = "dev.amrakshay.atvremote"
     // The current AndroidX generation (core 1.19, lifecycle 2.11, Compose 1.12)
@@ -20,8 +31,8 @@ android {
         // and nothing here needs anything newer.
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+        versionName = rawVersion
     }
 
     buildTypes {
