@@ -38,6 +38,28 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Or copy the APK to the phone and open it from a file manager, allowing "install unknown apps" for
 that file manager once.
 
+## 3a. A box or projector with no remote service
+
+Some devices run Android TV but ship without `com.google.android.tv.remote.service`, so there is
+nothing on port 6466 to pair with. The app drives those over ADB instead.
+
+1. On the device: **Settings → Device Preferences → About**, click *Build* seven times to unlock
+   developer options.
+2. **Settings → Device Preferences → Developer options → USB debugging** (and, where the device
+   offers it separately, *Wireless debugging* / *ADB over network*).
+3. Open the app. The device appears under *Found on your network* marked **over ADB**.
+4. There is no code. If the device has not seen this phone before it shows an
+   **"Allow debugging?"** box — accept it, and tick *always allow from this computer* so it stops
+   asking.
+
+If the device does not appear, it is almost always that ADB is listening only over USB. Plugging
+it into a computer once and running `adb tcpip 5555` turns on the network listener until the next
+reboot; many of these devices then keep it on permanently.
+
+Everything on the remote works the same afterwards, with the differences listed in the README
+under *Devices without the TV Remote Service* — most usefully, the Apps sheet lists what is really
+installed, and typing reaches apps the TV protocol cannot.
+
 ## 3. Pair with the TV
 
 **Switch the TV on first.** It leaves the network entirely when asleep, so the app cannot find a
@@ -52,6 +74,12 @@ remembers it, so every later launch goes straight to the remote.
 
 The TV names the phone on its pairing screen — the app sends the handset model, so you can tell
 which phone is asking.
+
+## 3b. Renaming a device
+
+Tap the name at the top of the remote. A device that reports itself as `t950s_be311` can be
+called "Projector"; the name lives on this phone only, nothing is sent to the device, and a name
+you have chosen is never replaced by the model it reports.
 
 ## 4. Using it
 
@@ -84,7 +112,7 @@ avahi-browse -rt _androidtvremote2._tcp   # Linux
 
 If that finds nothing while the TV is awake, the problem is the network, not the app.
 
-## Driving the TV without a phone
+## Driving a device without a phone
 
 The protocol module is a plain JVM library with a CLI attached. This is how the protocol was
 developed and is still the quickest way to check a change:

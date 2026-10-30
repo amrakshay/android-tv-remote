@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.amrakshay.atvremote.data.SavedTv
 import dev.amrakshay.atvremote.discovery.DiscoveredTv
+import dev.amrakshay.atvremote.protocol.TransportKind
 
 @Composable
 fun DiscoverScreen(
@@ -77,8 +79,9 @@ fun DiscoverScreen(
             SectionLabel("ALREADY PAIRED")
             paired.forEach { tv ->
                 TvRow(
-                    title = tv.serviceName,
-                    subtitle = tv.host,
+                    title = tv.title,
+                    subtitle = subtitleFor(tv.host, tv.kind),
+                    kind = tv.kind,
                     highlighted = false,
                     onClick = { onConnect(tv) },
                 )
@@ -108,8 +111,9 @@ fun DiscoverScreen(
         } else {
             tvs.forEach { tv ->
                 TvRow(
-                    title = tv.serviceName,
-                    subtitle = "${tv.host}:${tv.port}",
+                    title = tv.label,
+                    subtitle = subtitleFor(tv.host, tv.kind),
+                    kind = tv.kind,
                     highlighted = true,
                     onClick = { onChoose(tv) },
                 )
@@ -125,7 +129,9 @@ fun DiscoverScreen(
         Text(
             "Some routers block the discovery messages. If your TV never appears, check it " +
                 "is awake — it leaves the network completely when asleep — or type its " +
-                "address, from Settings → Network on the TV.",
+                "address, from Settings → Network on the TV. A box or projector with no " +
+                "remote service shows up only once Wi-Fi debugging is on in its developer " +
+                "options.",
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
             color = AtvColors.Faint,
@@ -186,10 +192,15 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/** ADB devices are worth marking: they behave a little differently once connected. */
+private fun subtitleFor(host: String, kind: TransportKind): String =
+    if (kind == TransportKind.Adb) "$host · over ADB" else host
+
 @Composable
 private fun TvRow(
     title: String,
     subtitle: String,
+    kind: TransportKind,
     highlighted: Boolean,
     onClick: () -> Unit,
 ) {
@@ -210,7 +221,7 @@ private fun TvRow(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Default.Tv,
+                if (kind == TransportKind.Adb) Icons.Default.DeveloperMode else Icons.Default.Tv,
                 contentDescription = null,
                 tint = if (highlighted) AtvColors.Accent else AtvColors.Muted,
                 modifier = Modifier.size(21.dp),

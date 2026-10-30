@@ -3,7 +3,9 @@ package dev.amrakshay.atvremote.protocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import dev.amrakshay.atvremote.protocol.adb.AdbKey
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import remote.Remotemessage.RemoteKeyCode
 import java.io.File
@@ -15,6 +17,14 @@ import kotlin.system.exitProcess
  *
  *   ./gradlew :protocol:tvcli --args="pair 192.168.0.236 creds"
  *   ./gradlew :protocol:tvcli --args="keys 192.168.0.236 creds VOLUME_DOWN VOLUME_UP"
+ *
+ * The same commands prefixed with `adb-` drive a device over adbd instead, for
+ * the TV boxes and projectors that have no remote service (issue #1):
+ *
+ *   ./gradlew :protocol:tvcli --args="adb-info  192.168.0.138 creds"
+ *   ./gradlew :protocol:tvcli --args="adb-keys  192.168.0.138 creds DPAD_DOWN DPAD_UP"
+ *   ./gradlew :protocol:tvcli --args="adb-text  192.168.0.138 creds the bear"
+ *   ./gradlew :protocol:tvcli --args="adb-launch 192.168.0.138 creds org.videolan.vlc/.StartActivity"
  */
 fun main(args: Array<String>) {
     runBlocking { run(args) }
@@ -23,7 +33,10 @@ fun main(args: Array<String>) {
 
 private suspend fun run(args: Array<String>) {
     if (args.size < 3) {
-        println("usage: pair|keys|text|launch <host> <credsDir> [KEYCODE... | words | appLink]")
+        println(
+            "usage: pair|keys|text|search|launch <host> <credsDir> [KEYCODE... | words | appLink]\n" +
+                "       adb-info|adb-keys|adb-text|adb-launch <host> <credsDir> [KEYCODE... | words | component]",
+        )
         exitProcess(2)
     }
     val (command, host, credsPath) = args
@@ -132,9 +145,70 @@ private suspend fun run(args: Array<String>) {
             scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         }
 
+        "adb-info", "adb-keys", "adb-text", "adb-launch" ->
+            adb(command, host, creds, args.drop(3))
+
         else -> {
             println("unknown command: $command")
             exitProcess(2)
         }
     }
+}
+
+/**
+ * The ADB transport, driven the same way — the point of keeping `protocol/`
+ * free of Android is that both transports can be proven from a desktop.
+ */
+private suspend fun adb(command: String, host: String, creds: File, rest: List<String>) {
+    creds.mkdirs()
+    val keyFile = File(creds, "adbkey.pem")
+    val key = if (keyFile.exists()) {
+        AdbKey.fromPem(keyFile.readText())
+    } else {
+        AdbKey.generate().also { keyFile.writeText(it.privateKeyPem()) }
+    }
+
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    AdbRemote(host, key).use { remote ->
+        scope.launch {
+            remote.awaitingAuthorisation.collect {
+                if (it) println("  !! accept the \"Allow debugging?\" prompt on the device")
+            }
+        }
+        remote.connect(scope)
+        println("CONNECTED over adb")
+        println("  device  = ${remote.device.value}")
+        delay(1500)
+        println("  volume  = ${remote.volume.value}")
+        println("  app     = ${remote.currentApp.value}")
+
+        when (command) {
+            "adb-info" -> {
+                println("  apps:")
+                remote.apps.value.forEach { println("    ${it.label.padEnd(14)} ${it.target}") }
+            }
+
+            "adb-keys" -> for (name in rest) {
+                println("  >> $name")
+                remote.sendKey(RemoteKeyCode.valueOf("KEYCODE_$name"))
+                delay(900)
+                println("     volume=${remote.volume.value} app=${remote.currentApp.value}")
+            }
+
+            "adb-text" -> {
+                val phrase = rest.joinToString(" ")
+                println("  >> typing: $phrase")
+                remote.sendText(phrase)
+                delay(1500)
+            }
+
+            "adb-launch" -> {
+                println("  >> launching: ${rest.first()}")
+                remote.launchApp(rest.first())
+                delay(3000)
+                println("  current app: ${remote.currentApp.value}")
+            }
+        }
+    }
+    scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
 }

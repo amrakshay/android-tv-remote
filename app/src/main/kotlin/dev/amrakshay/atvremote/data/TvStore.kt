@@ -2,6 +2,8 @@ package dev.amrakshay.atvremote.data
 
 import android.content.Context
 import dev.amrakshay.atvremote.protocol.ClientIdentity
+import dev.amrakshay.atvremote.protocol.TransportKind
+import dev.amrakshay.atvremote.protocol.adb.AdbKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -12,17 +14,28 @@ data class SavedTv(
     val serviceName: String,
     val host: String,
     val port: Int,
+    val kind: TransportKind = TransportKind.Native,
+    /** What to call it on screen, once the device has told us. */
+    val label: String = "",
 ) {
+    val title: String get() = label.ifBlank { serviceName }
+
     fun toJson(): JSONObject = JSONObject()
         .put("serviceName", serviceName)
         .put("host", host)
         .put("port", port)
+        .put("kind", kind.name)
+        .put("label", label)
 
     companion object {
         fun fromJson(o: JSONObject) = SavedTv(
             serviceName = o.getString("serviceName"),
             host = o.getString("host"),
             port = o.getInt("port"),
+            // Everything saved before ADB support existed is a native TV.
+            kind = runCatching { TransportKind.valueOf(o.getString("kind")) }
+                .getOrDefault(TransportKind.Native),
+            label = o.optString("label", ""),
         )
     }
 }
@@ -41,6 +54,7 @@ class TvStore(context: Context) {
     private val certFile = File(dir, "cert.pem")
     private val keyFile = File(dir, "key.pem")
     private val tvsFile = File(dir, "tvs.json")
+    private val adbKeyFile = File(dir, "adbkey.pem")
 
     /** Loads the stored identity, generating one on first run. */
     suspend fun identity(): ClientIdentity = withContext(Dispatchers.IO) {
@@ -57,6 +71,23 @@ class TvStore(context: Context) {
             certFile.writeText(it.certificatePem())
             keyFile.writeText(it.privateKeyPem())
         }
+
+    /**
+     * The RSA key adbd remembers us by, generated once.
+     *
+     * Losing it is not fatal — the device simply asks to authorise the new one
+     * again — but keeping it means "always allow from this computer" sticks.
+     */
+    suspend fun adbKey(): AdbKey = withContext(Dispatchers.IO) {
+        if (adbKeyFile.exists()) {
+            runCatching { AdbKey.fromPem(adbKeyFile.readText()) }.getOrElse { generateAdbKey() }
+        } else {
+            generateAdbKey()
+        }
+    }
+
+    private fun generateAdbKey(): AdbKey =
+        AdbKey.generate().also { adbKeyFile.writeText(it.privateKeyPem()) }
 
     suspend fun pairedTvs(): List<SavedTv> = withContext(Dispatchers.IO) {
         if (!tvsFile.exists()) return@withContext emptyList()

@@ -33,6 +33,8 @@ import dev.amrakshay.atvremote.ui.DiscoverScreen
 import dev.amrakshay.atvremote.ui.KeyboardSheet
 import dev.amrakshay.atvremote.ui.PairingScreen
 import dev.amrakshay.atvremote.ui.RemoteScreen
+import dev.amrakshay.atvremote.ui.toTile
+import remote.Remotemessage.RemoteKeyCode
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +62,8 @@ private fun App(viewModel: RemoteViewModel = viewModel()) {
     val device by viewModel.device.collectAsStateWithLifecycle()
     val textField by viewModel.textField.collectAsStateWithLifecycle()
     val imeReady by viewModel.imeReady.collectAsStateWithLifecycle()
+    val apps by viewModel.apps.collectAsStateWithLifecycle()
+    val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     var sheet by remember { mutableStateOf<Sheet?>(null) }
 
     when (val s = state) {
@@ -84,9 +88,15 @@ private fun App(viewModel: RemoteViewModel = viewModel()) {
             onBack = viewModel::startDiscovery,
         )
 
+        is UiState.Authorising -> AuthorisingScreen(
+            title = s.title,
+            host = s.host,
+            onSwitchTv = viewModel::startDiscovery,
+        )
+
         is UiState.Connected -> {
             RemoteScreen(
-                tvName = s.tv.serviceName,
+                tvName = s.tv.title,
                 device = device,
                 volume = volume,
                 currentApp = currentApp,
@@ -96,18 +106,23 @@ private fun App(viewModel: RemoteViewModel = viewModel()) {
                 onType = { sheet = Sheet.Keyboard },
                 onApps = { sheet = Sheet.Apps },
                 onSwitchTv = viewModel::startDiscovery,
+                onRename = viewModel::rename,
             )
             when (sheet) {
                 Sheet.Keyboard -> KeyboardSheet(
                     tvText = textField,
                     currentApp = currentApp,
                     imeReady = imeReady,
+                    replacesText = capabilities?.replacesFieldText ?: true,
+                    announcesFields = capabilities?.announcesTextFields ?: true,
                     onSend = viewModel::sendText,
+                    onBackspace = { viewModel.key(RemoteKeyCode.KEYCODE_DEL) },
                     onDismiss = { sheet = null },
                 )
 
                 Sheet.Apps -> AppsSheet(
                     currentApp = currentApp,
+                    apps = apps.map { it.toTile() },
                     // Close on launch: leaving it open hides the remote behind a
                     // sheet you have just finished with, and swallows the next tap.
                     onLaunch = { viewModel.launchApp(it.link); sheet = null },
@@ -119,11 +134,49 @@ private fun App(viewModel: RemoteViewModel = viewModel()) {
         }
 
         is UiState.Unreachable -> UnreachableScreen(
-            tvName = s.tv.serviceName,
+            tvName = s.tv.title,
             reason = s.reason,
             onRetry = viewModel::retry,
             onSwitchTv = viewModel::startDiscovery,
         )
+    }
+}
+
+/**
+ * adbd will not talk to a key it has not been told about, and says so only on
+ * the device's own screen. Nothing we can do from here moves it along, so the
+ * screen says where to look.
+ */
+@Composable
+private fun AuthorisingScreen(title: String, host: String, onSwitchTv: () -> Unit) {
+    Centered {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(32.dp),
+        ) {
+            CircularProgressIndicator(color = AtvColors.Accent)
+            Text(
+                "Allow this phone on $title",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AtvColors.Text,
+            )
+            Text(
+                "The device at $host is asking whether to trust this phone. Accept the " +
+                    "\"Allow debugging?\" box on its screen, and tick \"always allow\" so " +
+                    "it stops asking.",
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = AtvColors.Muted,
+            )
+            Text(
+                "Choose another device",
+                fontSize = 13.sp,
+                color = AtvColors.Muted,
+                modifier = Modifier.clickable(onClick = onSwitchTv).padding(8.dp),
+            )
+        }
     }
 }
 
