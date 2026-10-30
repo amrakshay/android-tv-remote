@@ -38,14 +38,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.amrakshay.atvremote.protocol.RemoteApp
 
 /**
- * Deep links for the apps on this TV. Best-effort and **unverified** — Android TV
- * apps vary in which link scheme they answer to, so each one needs trying on the
- * real set. docs/PLAN.md §10 has the open question of curating this by hand versus
- * reading the installed list off the TV over ADB.
+ * One tile in the Apps sheet.
+ *
+ * Over ADB the device lists what it actually has, so these are real. The
+ * native protocol has no way to ask, so [DEFAULT_APPS] below is all we have
+ * there, and it is guesswork.
  */
 data class TvApp(val label: String, val initial: String, val link: String, val tint: Color)
+
+private val APP_TINTS = listOf(
+    Color(0xFFFF6B6B), Color(0xFF5AB9F5), Color(0xFF4ADE80),
+    Color(0xFFF5C84B), Color(0xFFC084FC), Color(0xFF38BDF8),
+)
+
+/** Stable per app, so a tile keeps its colour between sessions. */
+fun tintFor(key: String): Color =
+    APP_TINTS[((key.hashCode() % APP_TINTS.size) + APP_TINTS.size) % APP_TINTS.size]
+
+fun RemoteApp.toTile(): TvApp =
+    TvApp(label, label.take(1).uppercase(), target, tintFor(target))
 
 val DEFAULT_APPS = listOf(
     TvApp("YouTube", "Y", "https://www.youtube.com", Color(0xFFFF6B6B)),
@@ -61,7 +75,12 @@ fun KeyboardSheet(
     tvText: String,
     currentApp: String,
     imeReady: Boolean,
+    /** False over ADB: text is typed at the cursor rather than replacing the field. */
+    replacesText: Boolean,
+    /** False over ADB: nothing tells us whether a field is focused. */
+    announcesFields: Boolean,
     onSend: (String) -> Unit,
+    onBackspace: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -95,7 +114,11 @@ fun KeyboardSheet(
                     color = AtvColors.Text,
                 )
                 Text(
-                    if (imeReady) currentApp.ifBlank { "ready" } else "waiting for a text field",
+                    when {
+                        !announcesFields -> currentApp.ifBlank { "ready" }
+                        imeReady -> currentApp.ifBlank { "ready" }
+                        else -> "waiting for a text field"
+                    },
                     fontSize = 12.sp,
                     color = if (imeReady) AtvColors.Online else AtvColors.Muted,
                 )
@@ -119,17 +142,29 @@ fun KeyboardSheet(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Clear") { draft = ""; onSend("") }
+                if (replacesText) {
+                    Chip("Clear") { draft = ""; onSend("") }
+                } else {
+                    // Nothing can clear the field from here, so offer the one
+                    // key that undoes a typo.
+                    Chip("Backspace", onClick = onBackspace)
+                }
                 Chip("Send", filled = true) { onSend(draft) }
             }
 
             Text(
-                if (imeReady) {
-                    "Each send replaces what the TV's focused field holds."
-                } else {
-                    "No text field is listening. Open a search box on the TV first — and " +
-                        "note that apps drawing their own keyboard (YouTube among them) " +
-                        "never report one, so typing will not reach them."
+                when {
+                    !announcesFields ->
+                        "Typed straight into whatever is focused on the device — including " +
+                            "apps that draw their own keyboard, which the TV protocol cannot " +
+                            "reach. Text is added at the cursor rather than replacing the field."
+
+                    imeReady -> "Each send replaces what the TV's focused field holds."
+
+                    else ->
+                        "No text field is listening. Open a search box on the TV first — and " +
+                            "note that apps drawing their own keyboard (YouTube among them) " +
+                            "never report one, so typing will not reach them."
                 },
                 fontSize = 12.5.sp,
                 lineHeight = 18.sp,
@@ -143,9 +178,12 @@ fun KeyboardSheet(
 @Composable
 fun AppsSheet(
     currentApp: String,
+    /** What the device says it has; empty means we are guessing. */
+    apps: List<TvApp>,
     onLaunch: (TvApp) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val listed = apps.ifEmpty { DEFAULT_APPS }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -175,9 +213,9 @@ fun AppsSheet(
                 columns = GridCells.Fixed(3),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.height(240.dp),
+                modifier = Modifier.height(320.dp),
             ) {
-                items(DEFAULT_APPS) { app ->
+                items(listed) { app ->
                     Column(
                         modifier = Modifier
                             .height(104.dp)
@@ -208,8 +246,12 @@ fun AppsSheet(
             }
 
             Text(
-                "These deep links are best guesses and not all of them will work — each " +
-                    "one needs trying on this TV.",
+                if (apps.isEmpty()) {
+                    "These deep links are best guesses and not all of them will work — each " +
+                        "one needs trying on this TV."
+                } else {
+                    "Read off the device, so every one of these is really installed."
+                },
                 fontSize = 12.5.sp,
                 lineHeight = 18.sp,
                 color = AtvColors.Faint,

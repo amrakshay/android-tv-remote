@@ -9,9 +9,9 @@ This is **a remote**. It sends key presses to an Android TV and shows what the T
 
 Out of scope, and likely to be declined however well built:
 
-- **Managing the TV** — installing or removing apps, changing settings, file transfer. That is
-  what ADB is for, and [cleanyourtv](https://github.com/amrakshay/cleanyourtv) already does the
-  debloating half of it.
+- **Managing the TV** — installing or removing apps, changing settings, file transfer. The app
+  uses ADB as a transport for devices that have no remote service, but it is still a remote;
+  [cleanyourtv](https://github.com/amrakshay/cleanyourtv) does the debloating half of it.
 - **A cloud component, an account, or anything that needs the internet.** The app talks to one
   device on your Wi-Fi and nothing else, and that is worth keeping.
 - **Media playback in the app.** It drives the TV; the TV plays things.
@@ -43,10 +43,26 @@ driven against a real TV with no phone in the loop:
 ./gradlew :protocol:tvcli --args="pair   192.168.0.236 creds"
 ./gradlew :protocol:tvcli --args="keys   192.168.0.236 creds VOLUME_DOWN HOME"
 ./gradlew :protocol:tvcli --args="search 192.168.0.236 creds the bear season 3"
+
+./gradlew :protocol:tvcli --args="adb-info 192.168.0.138 creds"
+./gradlew :protocol:tvcli --args="adb-keys 192.168.0.138 creds DPAD_DOWN DPAD_UP"
 ```
 
 **Please keep it that way.** The moment it imports `android.*`, the tests need a device and the
 CLI stops working, and both of those paid for themselves repeatedly while this was being built.
+
+### Two transports behind one interface
+
+`Remote` is the seam: `RemoteSession` speaks the TV's own protocol, `AdbRemote` drives adbd for
+devices that have no remote service. Anything the two cannot both do belongs in `Capabilities`
+rather than in a branch in the UI — the point is that the screen can say what a device actually
+does instead of offering a control that silently fails.
+
+The ADB side is `shell:` streams and monkey's command port, nothing exotic, but two measurements
+shaped it and are worth not rediscovering: `input keyevent` costs about 300 ms a press on this
+class of hardware, and a persistent interactive shell does not help, because the cost is `cmd`
+starting up rather than the stream. monkey answers in about 70 ms. Keys go through monkey;
+everything else is a one-shot `shell:` stream, which ends cleanly when the device closes it.
 
 ### The Python implementation is the oracle
 
@@ -57,6 +73,11 @@ against a TV — the TV only ever answers "no", with no indication of why.
 
 `spike/` is a Dart implementation of the same protocol, kept as a second reference for the same
 reason. It is not built or shipped.
+
+The ADB public key encoding has an oracle of its own: `adb keygen` writes the same structure, so
+`AdbKeyTest` pins the Kotlin encoder to a key that `adb` itself generated. Change `AdbKey.kt` and
+check it against a fresh `adb keygen` rather than against a device — adbd's answer to a malformed
+key is to go quiet.
 
 ### The generated protobuf is committed
 
@@ -73,9 +94,10 @@ The `protobuf` version in `gradle/libs.versions.toml` must match the `protoc` th
 ## House style
 
 - Comments explain **why**, especially where the code looks wrong but is not. Several things here
-  are deliberate and surprising: `BigInteger.toByteArray()` cannot be used for the pairing hash,
-  writes must not happen on the caller's thread, `START_LONG`/`END_LONG` are not a substitute for
-  `SHORT`. Each of those has a comment saying so, because each was a bug first.
+  are deliberate and surprising: `BigInteger.toByteArray()` cannot be used for the pairing hash
+  or the ADB public key, writes must not happen on the caller's thread, `START_LONG`/`END_LONG`
+  are not a substitute for `SHORT`, and an interactive ADB shell echoes everything you send it
+  back at you. Each of those has a comment saying so, because each was a bug first.
 - British spelling in prose, American in code identifiers where the platform uses it.
 - No new dependency without a reason that a paragraph can justify.
 

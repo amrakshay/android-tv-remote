@@ -26,7 +26,6 @@ import remote.Remotemessage.RemoteKeyInject
 import remote.Remotemessage.RemoteMessage
 import remote.Remotemessage.RemotePingResponse
 import remote.Remotemessage.RemoteSetActive
-import java.io.Closeable
 import java.io.OutputStream
 import javax.net.ssl.SSLSocket
 
@@ -50,7 +49,19 @@ private const val ACTIVE_FEATURES = 1 or 2 or 4 or 32 or 64 or 512 // 615
 class RemoteSession(
     private val host: String,
     private val identity: ClientIdentity,
-) : Closeable {
+) : Remote {
+
+    override val capabilities = Capabilities(
+        kind = TransportKind.Native,
+        // Volume, the running app and the focused field all arrive unasked.
+        pushesState = true,
+        announcesTextFields = true,
+        replacesFieldText = true,
+        // The protocol launches by deep link and has no way to ask what is installed.
+        listsApps = false,
+    )
+
+    override val apps: StateFlow<List<RemoteApp>> = MutableStateFlow(emptyList<RemoteApp>()).asStateFlow()
 
     private var socket: SSLSocket? = null
     private var output: OutputStream? = null
@@ -73,20 +84,20 @@ class RemoteSession(
     private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private val _volume = MutableStateFlow<VolumeInfo?>(null)
-    val volume: StateFlow<VolumeInfo?> = _volume.asStateFlow()
+    override val volume: StateFlow<VolumeInfo?> = _volume.asStateFlow()
 
     private val _isOn = MutableStateFlow(false)
     val isOn: StateFlow<Boolean> = _isOn.asStateFlow()
 
     private val _currentApp = MutableStateFlow("")
-    val currentApp: StateFlow<String> = _currentApp.asStateFlow()
+    override val currentApp: StateFlow<String> = _currentApp.asStateFlow()
 
     private val _device = MutableStateFlow<DeviceInfo?>(null)
-    val device: StateFlow<DeviceInfo?> = _device.asStateFlow()
+    override val device: StateFlow<DeviceInfo?> = _device.asStateFlow()
 
     private val _textField = MutableStateFlow("")
     /** What the TV's focused text field currently holds, as the TV reports it. */
-    val textField: StateFlow<String> = _textField.asStateFlow()
+    override val textField: StateFlow<String> = _textField.asStateFlow()
 
     private val _imeReady = MutableStateFlow(false)
     /**
@@ -94,7 +105,7 @@ class RemoteSession(
      * the only way to learn the counters it expects echoed back. Typing before
      * this is silently ignored by the TV, so the UI must wait for it.
      */
-    val imeReady: StateFlow<Boolean> = _imeReady.asStateFlow()
+    override val imeReady: StateFlow<Boolean> = _imeReady.asStateFlow()
 
     // The TV hands these out in every RemoteImeBatchEdit and expects them echoed
     // back on anything we send. Starting from zero works until the first one
@@ -104,10 +115,10 @@ class RemoteSession(
 
     private val _disconnects = MutableSharedFlow<String>(extraBufferCapacity = 4)
     /** Emits when the connection drops; the UI reconnects rather than erroring out. */
-    val disconnects: SharedFlow<String> = _disconnects.asSharedFlow()
+    override val disconnects: SharedFlow<String> = _disconnects.asSharedFlow()
 
     /** Connects and returns once the TV has sent RemoteStart. */
-    suspend fun connect(scope: CoroutineScope) {
+    override suspend fun connect(scope: CoroutineScope) {
         withContext(Dispatchers.IO) {
             val s = connectTls(host, REMOTE_PORT, identity)
             socket = s
@@ -117,7 +128,7 @@ class RemoteSession(
         started.await()
     }
 
-    fun sendKey(key: RemoteKeyCode, direction: RemoteDirection = RemoteDirection.SHORT) {
+    override fun sendKey(key: RemoteKeyCode, direction: RemoteDirection) {
         send(
             RemoteMessage.newBuilder().setRemoteKeyInject(
                 RemoteKeyInject.newBuilder().setKeyCode(key).setDirection(direction),
@@ -137,7 +148,7 @@ class RemoteSession(
      * `start` and `end` are both the text length minus one, which is what the
      * reference implementation sends and what the TV accepts.
      */
-    fun sendText(text: String) {
+    override fun sendText(text: String) {
         if (text.isEmpty()) return
         val position = text.length - 1
         send(
@@ -159,10 +170,10 @@ class RemoteSession(
         )
     }
 
-    fun launchApp(appLink: String) {
+    override fun launchApp(target: String) {
         send(
             RemoteMessage.newBuilder().setRemoteAppLinkLaunchRequest(
-                RemoteAppLinkLaunchRequest.newBuilder().setAppLink(appLink),
+                RemoteAppLinkLaunchRequest.newBuilder().setAppLink(target),
             ),
         )
     }
